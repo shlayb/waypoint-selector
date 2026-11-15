@@ -102,6 +102,14 @@
     box-shadow: 0 1px 6px rgba(0,0,0,.6);
   }
   .wpicon.first { background: #ffd23f; }
+  li.wp .d { flex: none; font-size: 11px; color: var(--accent); font-family: ui-monospace, Menlo, Consolas, monospace; }
+  .seglabel {
+    background: rgba(16,20,24,.85); color: #fff; border: 1px solid rgba(46,204,154,.7);
+    border-radius: 10px; padding: 1px 7px; font: 600 11px/16px ui-monospace, Menlo, Consolas, monospace;
+    white-space: nowrap; width: auto !important; height: auto !important;
+    transform: translate(-50%, -50%); pointer-events: none;
+  }
+  .toggle { display: flex; align-items: center; gap: 6px; margin-top: 8px; color: var(--muted); font-size: 12px; cursor: pointer; }
   #toast {
     position: fixed; top: 16px; left: 50%; transform: translate(-50%, -80px);
     background: var(--panel); border: 1px solid var(--accent); color: var(--text);
@@ -143,6 +151,7 @@
       <button class="danger" id="btnClear">Hapus semua</button>
     </div>
     <input type="file" id="fileIn" accept=".json,application/json" hidden>
+    <label class="toggle"><input type="checkbox" id="chkSeg" checked> Tampilkan jarak antar waypoint di peta</label>
   </div>
 
   <div class="count"><span id="countLabel">0 waypoint</span><span id="distLabel"></span></div>
@@ -227,6 +236,23 @@
     return 2 * R * Math.asin(Math.sqrt(s));
   }
 
+  function fmtDist(m) {
+    return m >= 1000 ? (m / 1000).toFixed(2) + ' km' : m.toFixed(1) + ' m';
+  }
+
+  var segLabels = [];
+  function updateSegLabels() {
+    segLabels.forEach(function (l) { map.removeLayer(l); });
+    segLabels = [];
+    if (!$('chkSeg').checked) return;
+    for (var i = 1; i < points.length; i++) {
+      var a = points[i - 1], b = points[i];
+      var mid = [(a.lat + b.lat) / 2, (a.lon + b.lon) / 2];
+      var icon = L.divIcon({ className: 'seglabel', html: fmtDist(haversine(a, b)), iconSize: null });
+      segLabels.push(L.marker(mid, { icon: icon, interactive: false, keyboard: false, zIndexOffset: -500 }).addTo(map));
+    }
+  }
+
   function buildJSON() {
     return {
       mission_id: missionInput.value.trim() || defaultMissionId(),
@@ -245,12 +271,14 @@
         var ll = e.target.getLatLng();
         points[i] = { lat: ll.lat, lon: ll.lng };
         line.setLatLngs(points.map(function (q) { return [q.lat, q.lon]; }));
+        updateSegLabels();
       });
       m.on('dragend', function () { renderList(); });
       m.on('contextmenu', function () { removeAt(i); });
       return m;
     });
     line.setLatLngs(points.map(function (p) { return [p.lat, p.lon]; }));
+    updateSegLabels();
     renderList();
   }
 
@@ -262,6 +290,7 @@
       li.className = 'wp';
       li.innerHTML = '<span class="n">' + (i + 1) + '</span>' +
         '<span class="c">' + p.lat.toFixed(7) + ', ' + p.lon.toFixed(7) + '</span>' +
+        (i > 0 ? '<span class="d" title="Jarak dari WP ' + i + '">' + fmtDist(haversine(points[i - 1], p)) + '</span>' : '') +
         '<button class="x" title="Hapus">✕</button>';
       li.addEventListener('click', function (e) {
         if (e.target.classList.contains('x')) { removeAt(i); return; }
@@ -307,6 +336,7 @@
 
   map.on('click', function (e) { addPoint(e.latlng.lat, e.latlng.lng); });
 
+  $('chkSeg').addEventListener('change', updateSegLabels);
   $('btnUndo').addEventListener('click', undo);
   document.addEventListener('keydown', function (e) {
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z' && document.activeElement !== missionInput) {
