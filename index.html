@@ -1,0 +1,400 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Waypoint Planner</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<style>
+  :root {
+    --bg: #101418;
+    --panel: #171d23;
+    --line: #2a333c;
+    --text: #e6edf3;
+    --muted: #8b98a5;
+    --accent: #2ecc9a;
+    --danger: #ff6b6b;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font: 14px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    display: flex;
+  }
+  #side {
+    width: 340px;
+    min-width: 300px;
+    background: var(--panel);
+    border-right: 1px solid var(--line);
+    display: flex;
+    flex-direction: column;
+    z-index: 1000;
+  }
+  #side header { padding: 14px 16px 10px; border-bottom: 1px solid var(--line); }
+  #side h1 { margin: 0 0 2px; font-size: 17px; }
+  #side header p { margin: 0; color: var(--muted); font-size: 12px; }
+  .block { padding: 12px 16px; border-bottom: 1px solid var(--line); }
+  label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 4px; }
+  input[type=text] {
+    width: 100%;
+    background: var(--bg);
+    color: var(--text);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 8px 10px;
+    font: inherit;
+    font-family: ui-monospace, Menlo, Consolas, monospace;
+  }
+  input[type=text]:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+  .row { display: flex; gap: 6px; flex-wrap: wrap; }
+  button {
+    background: var(--bg);
+    color: var(--text);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 7px 10px;
+    font: inherit;
+    cursor: pointer;
+  }
+  button:hover { border-color: var(--muted); }
+  button.primary { background: var(--accent); color: #06231a; border-color: var(--accent); font-weight: 600; }
+  button.primary:hover { filter: brightness(1.08); }
+  button.danger:hover { border-color: var(--danger); color: var(--danger); }
+  button:disabled { opacity: .4; cursor: not-allowed; }
+  #listWrap { flex: 1; overflow-y: auto; min-height: 80px; }
+  .count { display: flex; justify-content: space-between; padding: 10px 16px 4px; color: var(--muted); font-size: 12px; }
+  ol { list-style: none; margin: 0; padding: 0 8px 8px; }
+  li.wp {
+    display: flex; align-items: center; gap: 8px;
+    padding: 6px 8px; border-radius: 6px; cursor: pointer;
+  }
+  li.wp:hover { background: rgba(255,255,255,.05); }
+  li.wp .n {
+    flex: none; width: 22px; height: 22px; border-radius: 50%;
+    background: var(--accent); color: #06231a; font-weight: 700; font-size: 11px;
+    display: grid; place-items: center;
+  }
+  li.wp .c { flex: 1; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 11.5px; color: var(--text); }
+  li.wp .x { padding: 2px 7px; border: none; background: transparent; color: var(--muted); }
+  li.wp .x:hover { color: var(--danger); }
+  .empty { padding: 18px 16px; color: var(--muted); font-size: 13px; }
+  details { border-top: 1px solid var(--line); }
+  summary { padding: 10px 16px; cursor: pointer; color: var(--muted); font-size: 12px; }
+  pre#preview {
+    margin: 0; padding: 0 16px 12px; max-height: 180px; overflow: auto;
+    font: 11px/1.45 ui-monospace, Menlo, Consolas, monospace; color: #b6c2cd;
+  }
+  #mapWrap { flex: 1; position: relative; }
+  #map { position: absolute; inset: 0; background: #0b0e11; cursor: crosshair; }
+  .leaflet-container { font: inherit; }
+  .hint {
+    position: absolute; left: 50%; bottom: 18px; transform: translateX(-50%);
+    background: rgba(16,20,24,.88); border: 1px solid var(--line);
+    padding: 6px 12px; border-radius: 999px; font-size: 12px; color: var(--muted);
+    z-index: 900; pointer-events: none; white-space: nowrap;
+  }
+  .wpicon {
+    background: var(--accent); color: #06231a; font-weight: 700; font-size: 12px;
+    border: 2px solid #fff; border-radius: 50%;
+    display: grid !important; place-items: center;
+    box-shadow: 0 1px 6px rgba(0,0,0,.6);
+  }
+  .wpicon.first { background: #ffd23f; }
+  #toast {
+    position: fixed; top: 16px; left: 50%; transform: translate(-50%, -80px);
+    background: var(--panel); border: 1px solid var(--accent); color: var(--text);
+    padding: 8px 14px; border-radius: 8px; z-index: 3000;
+    transition: transform .25s ease; font-size: 13px;
+  }
+  #toast.show { transform: translate(-50%, 0); }
+  @media (max-width: 760px) {
+    body { flex-direction: column-reverse; }
+    #side { width: 100%; min-width: 0; height: 46%; border-right: none; border-top: 1px solid var(--line); }
+    #mapWrap { height: 54%; flex: none; }
+    .hint { display: none; }
+  }
+</style>
+</head>
+<body>
+
+<aside id="side">
+  <header>
+    <h1>Waypoint Planner</h1>
+    <p>Klik peta untuk menambah titik, seret marker untuk memindah.</p>
+  </header>
+
+  <div class="block">
+    <label for="missionId">mission_id</label>
+    <input type="text" id="missionId" spellcheck="false" autocomplete="off">
+  </div>
+
+  <div class="block">
+    <div class="row">
+      <button class="primary" id="btnExport">Download JSON</button>
+      <button id="btnCopy">Copy JSON</button>
+      <button id="btnImport">Import</button>
+    </div>
+    <div class="row" style="margin-top:6px">
+      <button id="btnUndo">Undo</button>
+      <button id="btnFit">Fit</button>
+      <button id="btnLoc">Lokasi saya</button>
+      <button class="danger" id="btnClear">Hapus semua</button>
+    </div>
+    <input type="file" id="fileIn" accept=".json,application/json" hidden>
+  </div>
+
+  <div class="count"><span id="countLabel">0 waypoint</span><span id="distLabel"></span></div>
+  <div id="listWrap"><ol id="list"></ol><div class="empty" id="empty">Belum ada waypoint.</div></div>
+
+  <details>
+    <summary>Preview JSON</summary>
+    <pre id="preview"></pre>
+  </details>
+</aside>
+
+<div id="mapWrap">
+  <div id="map"></div>
+  <div class="hint">Klik: tambah · Seret: pindah · Klik kanan marker: hapus</div>
+</div>
+<div id="toast"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script>
+(function () {
+  // ---------- State ----------
+  var points = [];      // [{lat, lon}]
+  var markers = [];
+  var history = [];
+
+  var $ = function (id) { return document.getElementById(id); };
+  var missionInput = $('missionId');
+
+  function pad(n) { return String(n).padStart(2, '0'); }
+  function defaultMissionId() {
+    var d = new Date();
+    return 'mission_' + pad(d.getDate()) + pad(d.getMonth() + 1) + '_' + pad(d.getHours()) + pad(d.getMinutes());
+  }
+  missionInput.value = defaultMissionId();
+
+  // ---------- Map (satellite) ----------
+  var map = L.map('map', { zoomControl: true, maxZoom: 20 }).setView([-7.7668, 110.2345], 16);
+
+  var sat = L.tileLayer(
+    'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+    { maxZoom: 20, maxNativeZoom: 19, attribution: 'Tiles &copy; Esri — Maxar, Earthstar Geographics, GIS User Community' }
+  ).addTo(map);
+
+  var labels = L.tileLayer(
+    'https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}',
+    { maxZoom: 20, maxNativeZoom: 19, opacity: 0.9 }
+  );
+
+  L.control.layers(null, { 'Label tempat': labels }, { position: 'topright' }).addTo(map);
+  L.control.scale({ imperial: false }).addTo(map);
+
+  var line = L.polyline([], { color: '#2ecc9a', weight: 3, opacity: 0.9, dashArray: '8 6' }).addTo(map);
+
+  // ---------- Helpers ----------
+  function toast(msg) {
+    var t = $('toast');
+    t.textContent = msg;
+    t.classList.add('show');
+    clearTimeout(toast._t);
+    toast._t = setTimeout(function () { t.classList.remove('show'); }, 1800);
+  }
+
+  function snapshot() {
+    history.push(JSON.stringify(points));
+    if (history.length > 100) history.shift();
+  }
+
+  function makeIcon(i) {
+    return L.divIcon({
+      className: 'wpicon' + (i === 0 ? ' first' : ''),
+      html: String(i + 1),
+      iconSize: [26, 26],
+      iconAnchor: [13, 13]
+    });
+  }
+
+  function haversine(a, b) {
+    var R = 6371000, toRad = Math.PI / 180;
+    var dLat = (b.lat - a.lat) * toRad, dLon = (b.lon - a.lon) * toRad;
+    var s = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+            Math.cos(a.lat * toRad) * Math.cos(b.lat * toRad) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+    return 2 * R * Math.asin(Math.sqrt(s));
+  }
+
+  function buildJSON() {
+    return {
+      mission_id: missionInput.value.trim() || defaultMissionId(),
+      waypoints: points.map(function (p) { return { lat: p.lat, lon: p.lon }; })
+    };
+  }
+
+  // ---------- Render ----------
+  function render() {
+    // markers
+    markers.forEach(function (m) { map.removeLayer(m); });
+    markers = points.map(function (p, i) {
+      var m = L.marker([p.lat, p.lon], { icon: makeIcon(i), draggable: true, title: 'WP ' + (i + 1) }).addTo(map);
+      m.on('dragstart', snapshot);
+      m.on('drag', function (e) {
+        var ll = e.target.getLatLng();
+        points[i] = { lat: ll.lat, lon: ll.lng };
+        line.setLatLngs(points.map(function (q) { return [q.lat, q.lon]; }));
+      });
+      m.on('dragend', function () { renderList(); });
+      m.on('contextmenu', function () { removeAt(i); });
+      return m;
+    });
+    line.setLatLngs(points.map(function (p) { return [p.lat, p.lon]; }));
+    renderList();
+  }
+
+  function renderList() {
+    var ol = $('list');
+    ol.innerHTML = '';
+    points.forEach(function (p, i) {
+      var li = document.createElement('li');
+      li.className = 'wp';
+      li.innerHTML = '<span class="n">' + (i + 1) + '</span>' +
+        '<span class="c">' + p.lat.toFixed(7) + ', ' + p.lon.toFixed(7) + '</span>' +
+        '<button class="x" title="Hapus">✕</button>';
+      li.addEventListener('click', function (e) {
+        if (e.target.classList.contains('x')) { removeAt(i); return; }
+        map.setView([p.lat, p.lon], Math.max(map.getZoom(), 18));
+      });
+      ol.appendChild(li);
+    });
+
+    $('empty').style.display = points.length ? 'none' : 'block';
+    $('countLabel').textContent = points.length + ' waypoint';
+
+    var total = 0;
+    for (var k = 1; k < points.length; k++) total += haversine(points[k - 1], points[k]);
+    $('distLabel').textContent = points.length > 1
+      ? 'jalur ' + (total >= 1000 ? (total / 1000).toFixed(2) + ' km' : Math.round(total) + ' m')
+      : '';
+
+    $('preview').textContent = JSON.stringify(buildJSON(), null, 2);
+    $('btnUndo').disabled = history.length === 0;
+    $('btnClear').disabled = points.length === 0;
+    $('btnExport').disabled = points.length === 0;
+    $('btnCopy').disabled = points.length === 0;
+  }
+
+  // ---------- Actions ----------
+  function addPoint(lat, lon) {
+    snapshot();
+    points.push({ lat: lat, lon: lon });
+    render();
+  }
+
+  function removeAt(i) {
+    snapshot();
+    points.splice(i, 1);
+    render();
+  }
+
+  function undo() {
+    if (!history.length) return;
+    points = JSON.parse(history.pop());
+    render();
+  }
+
+  map.on('click', function (e) { addPoint(e.latlng.lat, e.latlng.lng); });
+
+  $('btnUndo').addEventListener('click', undo);
+  document.addEventListener('keydown', function (e) {
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z' && document.activeElement !== missionInput) {
+      e.preventDefault(); undo();
+    }
+  });
+
+  $('btnClear').addEventListener('click', function () {
+    if (!points.length) return;
+    if (!confirm('Hapus semua waypoint?')) return;
+    snapshot();
+    points = [];
+    render();
+  });
+
+  $('btnFit').addEventListener('click', function () {
+    if (points.length) map.fitBounds(L.latLngBounds(points.map(function (p) { return [p.lat, p.lon]; })), { padding: [60, 60], maxZoom: 19 });
+  });
+
+  $('btnLoc').addEventListener('click', function () {
+    if (!navigator.geolocation) { toast('Geolocation tidak didukung'); return; }
+    navigator.geolocation.getCurrentPosition(
+      function (pos) { map.setView([pos.coords.latitude, pos.coords.longitude], 18); },
+      function () { toast('Gagal mengambil lokasi'); }
+    );
+  });
+
+  $('btnExport').addEventListener('click', function () {
+    var data = buildJSON();
+    var blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = data.mission_id.replace(/[^\w\-]+/g, '_') + '.json';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(function () { URL.revokeObjectURL(a.href); }, 1000);
+    toast('JSON di-download');
+  });
+
+  $('btnCopy').addEventListener('click', function () {
+    var txt = JSON.stringify(buildJSON(), null, 2);
+    var done = function () { toast('JSON disalin'); };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(txt).then(done, fallback);
+    } else { fallback(); }
+    function fallback() {
+      var ta = document.createElement('textarea');
+      ta.value = txt; document.body.appendChild(ta); ta.select();
+      try { document.execCommand('copy'); done(); } catch (e) { toast('Gagal menyalin'); }
+      ta.remove();
+    }
+  });
+
+  $('btnImport').addEventListener('click', function () { $('fileIn').click(); });
+  $('fileIn').addEventListener('change', function (e) {
+    var f = e.target.files[0];
+    if (!f) return;
+    var r = new FileReader();
+    r.onload = function () {
+      try {
+        var d = JSON.parse(r.result);
+        if (!d || !Array.isArray(d.waypoints)) throw new Error('format');
+        var pts = d.waypoints.map(function (w) {
+          var lat = Number(w.lat), lon = Number(w.lon);
+          if (!isFinite(lat) || !isFinite(lon)) throw new Error('koordinat');
+          return { lat: lat, lon: lon };
+        });
+        snapshot();
+        points = pts;
+        if (d.mission_id) missionInput.value = String(d.mission_id);
+        render();
+        $('btnFit').click();
+        toast('Import ' + pts.length + ' waypoint');
+      } catch (err) {
+        toast('File JSON tidak valid');
+      }
+    };
+    r.readAsText(f);
+    e.target.value = '';
+  });
+
+  missionInput.addEventListener('input', function () {
+    $('preview').textContent = JSON.stringify(buildJSON(), null, 2);
+  });
+
+  render();
+})();
+</script>
+</body>
+</html>
